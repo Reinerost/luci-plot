@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+
+    <title>LuCI Plot Test</title>
+
+    <link rel="stylesheet" href="luci-plot.css">
+
+    <script src="luci-plot.js"></script>
+</head>
+
+<body>
+
+<h1>LuCI Plot Test</h1>
+
+
+<div id="index-plot" class="test-plot"></div>
+
+
+<div id="time-plot" class="test-plot"></div>
+
+
+<div id="dual-axis-plot" class="test-plot"></div>
+
+
+<script>
+'use strict';
+
+
+/*
+ * Test 1:
+ *
+ * Keine X-Werte in den Daten.
+ * Der Plotter verwendet einfach den Array-Index.
+ */
+const indexData = [
+    { value: 10.0 },
+    { value: 12.5 },
+    { value: 11.2 },
+    { value: 15.7 },
+    { value: 14.3 },
+    { value: 16.8 },
+    { value: 13.9 }
+];
+
+
+LuciPlot.render(
+    '#index-plot',
+    indexData,
+    {
+        title: 'Index axis',
+
+        x: {
+            type: 'index'
+        },
+
+        series: [
+            {
+                key: 'value',
+                label: 'Test value',
+                digits: 1
+            }
+        ]
+    }
+);
+
+
+/*
+ * Test 2:
+ *
+ * Hier wird X aus einem Timestamp gelesen.
+ *
+ * Die Zeitabstände sind absichtlich NICHT gleichmäßig.
+ */
+
+const timeData = [
+    {
+        timestamp: 1756882800,
+        temperature: 20.1,
+        temperature_min: 19.7,
+        temperature_max: 20.4,
+        humidity: 53
+    },
+    {
+        timestamp: 1756886400,
+        temperature: 20.3,
+        temperature_min: 19.9,
+        temperature_max: 20.7,
+        humidity: 55
+    },
+    {
+        timestamp: 1756890000,
+        temperature: 20.8,
+        temperature_min: 20.2,
+        temperature_max: 21.2,
+        humidity: 54
+    },
+
+    /*
+     * Große zeitliche Lücke
+     */
+    {
+        timestamp: 1756904400,
+        temperature: 22.4,
+        temperature_min: 21.8,
+        temperature_max: 22.9,
+        humidity: 48
+    },
+
+    {
+        timestamp: 1756908000,
+        temperature: 22.1,
+        temperature_min: 21.6,
+        temperature_max: 22.6,
+        humidity: 49
+    },
+
+    {
+        timestamp: 1756911600,
+        temperature: 21.7,
+        temperature_min: 21.2,
+        temperature_max: 22.2,
+        humidity: 51
+    }
+];
+
+
+LuciPlot.render(
+    '#time-plot',
+    timeData,
+    {
+        title: 'Timestamp axis',
+
+        x: {
+            key: 'timestamp',
+            type: 'time',
+
+            /*
+             * Für die Achse reicht uns beim Test
+             * Stunde:Minute.
+             */
+            format: value => {
+                return new Date(value * 1000)
+                    .toLocaleTimeString(
+                        'de-DE',
+                        {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }
+                    );
+            }
+        },
+
+        series: [
+            {
+                key: 'temperature',
+                minKey: 'temperature_min',
+                maxKey: 'temperature_max',
+                label: 'Temperature',
+                unit: '°C',
+                digits: 1
+            }
+        ]
+    }
+);
+
+/*
+ * Test 3:
+ *
+ * Zwei Messgrößen mit derselben Einheit, aber völlig
+ * unterschiedlichen Wertebereichen. Beide bekommen eine
+ * eigene Y-Skala.
+ */
+const voltageData = [
+    { battery: 12.1, mains: 229.0 },
+    { battery: 12.4, mains: 231.5 },
+    { battery: 12.8, mains: 228.7 },
+    { battery: 13.2, mains: 233.1 },
+    { battery: 13.8, mains: 230.4 },
+    { battery: 14.1, mains: 227.9 },
+    { battery: 13.6, mains: 232.2 }
+];
+
+
+LuciPlot.render(
+    '#dual-axis-plot',
+    voltageData,
+    {
+        title: 'Two independent Y axes',
+
+        x: {
+            type: 'index'
+        },
+
+        axes: {
+            batteryVoltage: {
+                side: 'left',
+                label: 'Battery voltage',
+                unit: 'V'
+            },
+
+            mainsVoltage: {
+                side: 'right',
+                label: 'Mains voltage',
+                unit: 'V'
+            }
+        },
+
+        series: [
+            {
+                key: 'battery',
+                axis: 'batteryVoltage',
+                label: 'Battery',
+                digits: 1
+            },
+            {
+                key: 'mains',
+                axis: 'mainsVoltage',
+                label: 'Mains',
+                digits: 1
+            }
+        ]
+    }
+);
+
+</script>
+
+</body>
+</html>
