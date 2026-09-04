@@ -140,6 +140,188 @@ const LuciPlot = (() => {
     }
 
 
+
+    function getValueByKey(entry, key)
+    {
+        if (!key)
+            return undefined;
+
+        /*
+         * Fast path for the usual case.
+         */
+        if (!key.includes('.'))
+            return entry[key];
+
+        return key.split('.').reduce((value, part) => {
+            if (value === null || value === undefined)
+                return undefined;
+
+            return value[part];
+        }, entry);
+    }
+
+
+    function keyAccessor(key)
+    {
+        return entry => getValueByKey(entry, key);
+    }
+
+
+    function normalizePlotInput(entries, options)
+    {
+        /*
+         * JSON/declarative form:
+         *
+         * LuciPlot.render('#plot', {
+         *     plot: { ... },
+         *     data: [ ... ]
+         * });
+         *
+         * The traditional JavaScript form remains supported:
+         *
+         * LuciPlot.render('#plot', data, options);
+         */
+        if (!Array.isArray(entries) &&
+            entries &&
+            typeof entries === 'object' &&
+            Array.isArray(entries.data)) {
+
+            const plot = entries.plot || {};
+
+            return {
+                entries: entries.data,
+                options: plot
+            };
+        }
+
+        return {
+            entries: entries,
+            options: options || {}
+        };
+    }
+
+
+
+    function numericValue(value)
+    {
+        /*
+         * Missing values must stay missing.
+         *
+         * Important for JSON null values and RRD UNKNOWN/NaN data:
+         * Number(null) is 0, which would turn gaps into false zeroes.
+         */
+        if (value === null || value === undefined)
+            return null;
+
+        /*
+         * RRD JSON may represent unknown values as NaN-like strings,
+         * depending on the producer/version/path used.
+         */
+        if (typeof value === 'string') {
+            const s = value.trim();
+
+            if (!s ||
+                s.toLowerCase() === 'nan' ||
+                s.toLowerCase() === '-nan' ||
+                s.toLowerCase() === '+nan')
+                return null;
+        }
+
+        const number = Number(value);
+
+        return Number.isFinite(number) ? number : null;
+    }
+
+
+
+    function namedFormatter(name, options = {})
+    {
+        if (typeof name !== 'string')
+            return null;
+
+        switch (name.toLowerCase()) {
+
+            case 'number':
+                return (value, step) => {
+                    if (!Number.isFinite(value))
+                        return options.missing || '–';
+
+                    let result;
+
+                    if (Number.isInteger(options.digits))
+                        result = value.toFixed(options.digits);
+                    else if (Number.isFinite(step))
+                        result = formatNumber(value, step);
+                    else
+                        result = String(value);
+
+                    if (options.unit)
+                        result += ' ' + options.unit;
+
+                    return result;
+                };
+
+            case 'integer':
+                return value => {
+                    if (!Number.isFinite(value))
+                        return options.missing || '–';
+
+                    let result = String(Math.round(value));
+
+                    if (options.unit)
+                        result += ' ' + options.unit;
+
+                    return result;
+                };
+
+            case 'time':
+                return value => {
+                    if (!Number.isFinite(value))
+                        return options.missing || '–';
+
+                    return new Date(value * 1000)
+                        .toLocaleTimeString();
+                };
+
+            case 'date':
+                return value => {
+                    if (!Number.isFinite(value))
+                        return options.missing || '–';
+
+                    return new Date(value * 1000)
+                        .toLocaleDateString();
+                };
+
+            case 'datetime':
+                return value => {
+                    if (!Number.isFinite(value))
+                        return options.missing || '–';
+
+                    return new Date(value * 1000)
+                        .toLocaleString();
+                };
+
+            default:
+                throw new Error(`Unknown formatter "${name}"`);
+        }
+    }
+
+
+    function resolveFormatter(format, fallback, options)
+    {
+        if (typeof format === 'function')
+            return format;
+
+        if (typeof format === 'string')
+            return namedFormatter(format, options);
+
+        if (format !== undefined && format !== null)
+            throw new Error('Formatter must be a function or a formatter name');
+
+        return fallback;
+    }
+
+
     function defaultXDefinition()
     {
         return {
@@ -168,8 +350,10 @@ const LuciPlot = (() => {
                 type: 'index',
                 label: x.label || 'Index',
                 value: (entry, index) => index,
-                format: x.format ||
-                    (value => String(Math.round(value)))
+                format: resolveFormatter(
+                    x.format,
+                    value => String(Math.round(value))
+                )
             };
         }
 
@@ -190,13 +374,12 @@ const LuciPlot = (() => {
 
                 value:
                     x.value ||
-                    (entry => entry[key]),
+                    keyAccessor(key),
 
-                format:
-                    x.format ||
-                    (value =>
-                        new Date(value * 1000)
-                            .toLocaleString())
+                format: resolveFormatter(
+                    x.format,
+                    namedFormatter('datetime')
+                )
             };
         }
 
@@ -214,11 +397,12 @@ const LuciPlot = (() => {
 
                 value:
                     x.value ||
-                    (entry => entry[x.key]),
+                    keyAccessor(x.key),
 
-                format:
-                    x.format ||
-                    (value => String(value))
+                format: resolveFormatter(
+                    x.format,
+                    value => String(value)
+                )
             };
         }
 
@@ -234,7 +418,10 @@ const LuciPlot = (() => {
             type: x.type || 'number',
             label: x.label || null,
             value: x.value || ((entry, index) => index),
-            format: x.format || (value => String(value))
+            format: resolveFormatter(
+                x.format,
+                value => String(value)
+            )
         };
     }
 
@@ -245,6 +432,20 @@ const LuciPlot = (() => {
 
         rawSeries.forEach(s => {
             const id = s.axis || 'default';
+
+            /*
+             * If an axes object is present, an explicitly named axis
+             * must also exist in that object. This catches typos such
+             * as axis: "temperatur" instead of "temperature".
+             *
+             * Without an axes object, named axes may still be created
+             * implicitly, preserving the existing shorthand API.
+             */
+            if (s.axis &&
+                axisOptions !== undefined &&
+                axisOptions !== null &&
+                !Object.prototype.hasOwnProperty.call(axisOptions, id))
+                throw new Error(`Unknown Y axis "${id}"`);
 
             if (!usedIds.includes(id))
                 usedIds.push(id);
@@ -261,7 +462,7 @@ const LuciPlot = (() => {
             ? axisOptions[id]
             : {};
 
-            let side = source.side;
+            let side = source.side || source.position;
 
             if (!side)
                 side = index === 0 ? 'left' : 'right';
@@ -278,7 +479,16 @@ const LuciPlot = (() => {
                 id: id,
                 side: side,
                 label: source.label || null,
-                unit: source.unit || null
+                unit: source.unit || null,
+                format: resolveFormatter(
+                    source.format,
+                    null,
+                    {
+                        digits: source.digits,
+                        unit: null,
+                        missing: ''
+                    }
+                )
             });
         });
 
@@ -294,7 +504,7 @@ const LuciPlot = (() => {
             if (typeof s.value === 'function')
                 value = s.value;
             else if (s.key)
-            value = entry => entry[s.key];
+                value = keyAccessor(s.key);
             else
                 throw new Error('Series needs either "key" or "value"');
 
@@ -318,36 +528,41 @@ const LuciPlot = (() => {
 
             if (hasMin) {
                 minValue = typeof s.minValue === 'function'
-                ? s.minValue
-                : entry => entry[s.minKey];
+                    ? s.minValue
+                    : keyAccessor(s.minKey);
 
                 maxValue = typeof s.maxValue === 'function'
-                ? s.maxValue
-                : entry => entry[s.maxKey];
+                    ? s.maxValue
+                    : keyAccessor(s.maxKey);
             }
 
             const unit = s.unit !== undefined
             ? s.unit
             : axes[axis].unit;
 
-            let format = s.format;
+            const digits =
+                Number.isInteger(s.digits) ? s.digits : 1;
 
-            if (!format) {
-                const digits =
-                    Number.isInteger(s.digits) ? s.digits : 1;
+            const defaultFormat = value => {
+                if (!Number.isFinite(value))
+                    return '–';
 
-                format = value => {
-                    if (!Number.isFinite(value))
-                        return '–';
+                let text = value.toFixed(digits);
 
-                    let text = value.toFixed(digits);
+                if (unit)
+                    text += ' ' + unit;
 
-                    if (unit)
-                        text += ' ' + unit;
+                return text;
+            };
 
-                    return text;
-                };
-            }
+            const format = resolveFormatter(
+                s.format,
+                defaultFormat,
+                {
+                    digits: digits,
+                    unit: unit
+                }
+            );
 
             return Object.assign({}, s, {
                 axis: axis,
@@ -366,9 +581,9 @@ const LuciPlot = (() => {
         const result = [];
 
         entries.forEach((entry, index) => {
-            const x = Number(xdef.value(entry, index));
+            const x = numericValue(xdef.value(entry, index));
 
-            if (!Number.isFinite(x))
+            if (x === null)
                 return;
 
             const values = [];
@@ -376,16 +591,16 @@ const LuciPlot = (() => {
             const maxs = [];
 
             series.forEach(s => {
-                const y = Number(s.value(entry, index));
+                const y = numericValue(s.value(entry, index));
 
-                values.push(Number.isFinite(y) ? y : null);
+                values.push(y);
 
                 if (s.minValue && s.maxValue) {
-                    const ymin = Number(s.minValue(entry, index));
-                    const ymax = Number(s.maxValue(entry, index));
+                    const ymin = numericValue(s.minValue(entry, index));
+                    const ymax = numericValue(s.maxValue(entry, index));
 
-                    mins.push(Number.isFinite(ymin) ? ymin : null);
-                    maxs.push(Number.isFinite(ymax) ? ymax : null);
+                    mins.push(ymin);
+                    maxs.push(ymax);
                 }
                 else {
                     mins.push(null);
@@ -461,21 +676,70 @@ const LuciPlot = (() => {
 
             haveYData = true;
 
+            const axis = axes[axisId];
+
             let ymin = Math.min(...yValues);
             let ymax = Math.max(...yValues);
 
+            const hasFixedMin =
+                axis.min !== undefined && axis.min !== null;
+            const hasFixedMax =
+                axis.max !== undefined && axis.max !== null;
+
+            let fixedMin = null;
+            let fixedMax = null;
+
+            if (hasFixedMin) {
+                fixedMin = Number(axis.min);
+
+                if (!Number.isFinite(fixedMin))
+                    throw new Error(
+                        `Invalid min for Y axis "${axisId}"`
+                    );
+            }
+
+            if (hasFixedMax) {
+                fixedMax = Number(axis.max);
+
+                if (!Number.isFinite(fixedMax))
+                    throw new Error(
+                        `Invalid max for Y axis "${axisId}"`
+                    );
+            }
+
+            /*
+             * Automatic padding is only applied on sides which are not
+             * explicitly fixed by the caller.
+             */
             if (ymin === ymax) {
                 const pad = Math.abs(ymin) * 0.05 || 1;
 
-                ymin -= pad;
-                ymax += pad;
+                if (!hasFixedMin)
+                    ymin -= pad;
+
+                if (!hasFixedMax)
+                    ymax += pad;
             }
             else {
                 const pad = (ymax - ymin) * 0.08;
 
-                ymin -= pad;
-                ymax += pad;
+                if (!hasFixedMin)
+                    ymin -= pad;
+
+                if (!hasFixedMax)
+                    ymax += pad;
             }
+
+            if (hasFixedMin)
+                ymin = fixedMin;
+
+            if (hasFixedMax)
+                ymax = fixedMax;
+
+            if (!(ymin < ymax))
+                throw new Error(
+                    `Invalid range for Y axis "${axisId}": min must be smaller than max`
+                );
 
             axisScales[axisId] = {
                 ymin: ymin,
@@ -1145,12 +1409,19 @@ const LuciPlot = (() => {
         if (!target)
             throw new Error('Plot target not found');
 
+        const input = normalizePlotInput(entries, options);
+
+        entries = input.entries;
+        options = input.options;
+
         if (!Array.isArray(entries))
-            throw new Error('Entries must be an array');
+            throw new Error(
+                'Entries must be an array or a plot object with a "data" array'
+            );
 
         if (!Array.isArray(options.series) ||
             !options.series.length)
-        throw new Error('At least one series is required');
+            throw new Error('At least one series is required');
 
         const axes = normalizeAxes(options.axes, options.series);
 
