@@ -101,8 +101,9 @@ body {
 
 .luci-plot-container {
     position: relative;
+    width: 100%;
+    max-width: 800px;
 }
-
 .luci-plot-hover-overlay {
     fill: transparent;
     pointer-events: all;
@@ -180,4 +181,5 @@ body {
 .luci-plot-y-axis-title {
     font-weight: 600;
 }
+
 
