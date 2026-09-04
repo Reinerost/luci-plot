@@ -203,6 +203,8 @@ A minimal numeric plot can also be created using the JavaScript interface:
     });
 
 See `example/index.html` for a more complete example.
+or
+See `API.md` for a description of the available interfaces.
 
 ## Origin
 
