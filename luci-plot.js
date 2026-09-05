@@ -166,32 +166,81 @@ const LuciPlot = (() => {
         return entry => getValueByKey(entry, key);
     }
 
+   function curvesToEntries(curves)
+    {
+        const keys = Object.keys(curves || {});
+
+        if (!keys.length)
+            return [];
+
+        keys.forEach(key => {
+            if (!Array.isArray(curves[key]))
+                throw new Error(`curve '${key}' is not an array`);
+        });
+
+        const length = curves[keys[0]].length;
+
+        keys.forEach(key => {
+            if (curves[key].length !== length)
+                throw new Error(`curve '${key}' has a different length`);
+        });
+
+        const entries = [];
+
+        for (let index = 0; index < length; index++) {
+            const entry = {};
+
+            keys.forEach(key => {
+                entry[key] = curves[key][index];
+            });
+
+            entries.push(entry);
+        }
+
+        return entries;
+    }
 
     function normalizePlotInput(entries, options)
     {
-        /*
-         * JSON/declarative form:
-         *
-         * LuciPlot.render('#plot', {
-         *     plot: { ... },
-         *     data: [ ... ]
-         * });
-         *
-         * The traditional JavaScript form remains supported:
-         *
-         * LuciPlot.render('#plot', data, options);
-         */
+       /*
+        * JSON/declarative form:
+        *
+        * LuciPlot.render('#plot', {
+        *     plot: { ... },
+        *     data: [ ... ]
+        * });
+        *
+        * or:
+        *
+        * LuciPlot.render('#plot', {
+        *     plot: { ... },
+        *     curves: { ... }
+        * });
+        *
+        * The traditional JavaScript form remains supported:
+        *
+        * LuciPlot.render('#plot', data, options);
+        */
         if (!Array.isArray(entries) &&
             entries &&
-            typeof entries === 'object' &&
-            Array.isArray(entries.data)) {
+            typeof entries === 'object') {
 
             const plot = entries.plot || {};
 
-            return {
-                entries: entries.data,
-                options: plot
-            };
+            if (Array.isArray(entries.data)) {
+                return {
+                    entries: entries.data,
+                    options: plot
+                };
+            }
+
+            if (entries.curves &&
+                typeof entries.curves === 'object') {
+                return {
+                    entries: curvesToEntries(entries.curves),
+                    options: plot
+                };
+            }
         }
 
         return {
@@ -1349,7 +1398,7 @@ const LuciPlot = (() => {
                     return;
                 }
 
-                marker.setAttribute('visibility', 'visible');
+                marker.setAttribute('visibility', 'inherit');
                 marker.setAttribute('cx', x);
                 marker.setAttribute('cy', scale.axes[series[index].axis].ys(y));
             });
@@ -1416,7 +1465,7 @@ const LuciPlot = (() => {
 
         if (!Array.isArray(entries))
             throw new Error(
-                'Entries must be an array or a plot object with a "data" array'
+                'Entries must be an array or a plot object with "data" or "curves"'
             );
 
         if (!Array.isArray(options.series) ||

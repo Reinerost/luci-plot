@@ -24,6 +24,7 @@ body {
     display: block;
     width: 100%;
     height: auto;
+    cursor: crosshair;
 }
 
 .luci-plot-title {
@@ -174,8 +175,8 @@ body {
 
 .luci-plot-y-axis line {
     stroke: currentColor;
-    stroke-width: 1;
     opacity: 0.55;
+    stroke-width: 1;
 }
 
 .luci-plot-y-axis-title {
