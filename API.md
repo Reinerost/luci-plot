@@ -47,6 +47,29 @@ The complete plot description can be represented as JSON:
             }
         ]
     }
+    
+The data may alternatively be supplied in vector form using `curves`:
+
+    {
+        "plot": {
+            ...
+        },
+
+        "curves": {
+            "time": [
+                1788498000,
+                1788498060
+            ],
+
+            "temperature": [
+                21.3,
+                21.5
+            ]
+        }
+    }
+
+All curves must contain the same number of values. The `data` and `curves`
+forms are equivalent and use the same plot configuration.
 
 Typical browser-side usage:
 
