@@ -36,6 +36,8 @@ anything about LibreSpeed, RRD or any particular application.
 - Up to two independent Y axes
 - Automatic or fixed Y-axis ranges
 - Nearest-data-point hover
+- Point-based (`data`) and vector-based (`curves`) input formats
+- CSS-based styling of series, grid, axes and markers
 - Configurable value formatting
 - Named JSON-compatible formatters
 - Missing values create gaps instead of connecting across them
@@ -103,7 +105,35 @@ For example:
             }
         ]
     }
+The data may alternatively be supplied in vector form. Each curve must
+contain the same number of values:
 
+    {
+        "plot": {
+            ...
+        },
+
+        "curves": {
+            "time": [
+                1788498000,
+                1788498060
+            ],
+
+            "temperature": [
+                21.3,
+                21.5
+            ],
+
+            "humidity": [
+                57,
+                56
+            ]
+        }
+    }
+
+The `data` and `curves` forms are equivalent from the renderer's point of
+view. The vector form can be more convenient for backends which naturally
+produce separate arrays of values.
 It can be rendered directly:
 
     const spec = await response.json();
@@ -202,9 +232,8 @@ A minimal numeric plot can also be created using the JavaScript interface:
         ]
     });
 
-See `example/index.html` for a more complete example.
-or
-See `API.md` for a description of the available interfaces.
+See `example/index.html` for a more complete example and `API.md` for a
+description of the available interfaces.
 
 ## Origin
 
